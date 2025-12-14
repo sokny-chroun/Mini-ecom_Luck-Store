@@ -56,7 +56,10 @@ const pool = new Pool({
     database: process.env.DB_NAME,
     password: process.env.DB_PASSWORD,
     port: process.env.DB_PORT,
-    ssl: true
+    ssl: true,
+    max: 1, // Important for serverless - use 1 connection
+    idleTimeoutMillis: 30000,
+    connectionTimeoutMillis: 5000
 });
 
 // Test database connection
