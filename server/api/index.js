@@ -2,6 +2,11 @@ const express = require('express');
 const cors = require('cors');
 const morgan = require('morgan');
 const { Pool } = require('pg');
+const fs = require("node:fs");
+const {diskStorage} = require("multer");
+const multer = require("multer");
+const {join} = require("node:path");
+const path = require("node:path");
 require('dotenv').config();
 
 const app = express();
@@ -27,14 +32,43 @@ const getPool = () => {
     return pool;
 };
 
-// Health check endpoint
-app.get('/api/health', (req, res) => {
-    res.json({
-        status: 'healthy',
-        timestamp: new Date().toISOString(),
-        environment: process.env.NODE_ENV || 'development'
-    });
+// Configure Multer for file uploads
+const uploadDir = join(__dirname, "../",process.env.PRODUCT_IMAGE_PATH); // product path
+
+if (!fs.existsSync(uploadDir)) {
+    fs.mkdirSync(uploadDir, { recursive: true });
+    console.log('📁 Created upload directory:', uploadDir);
+}
+
+const storage = diskStorage({
+    destination: function (req, file, cb) {
+        cb(null, uploadDir);
+    },
+    filename: function (req, file, cb) {
+        const uniqueName = Date.now() + '-' + Math.round(Math.random() * 1E9) + path.extname(file.originalname);
+        cb(null, uniqueName);
+    }
 });
+
+const upload = multer({
+    storage: storage,
+    limits: {
+        fileSize: 5 * 1024 * 1024 // 5MB limit
+    },
+    fileFilter: function (req, file, cb) {
+        const allowedTypes = /jpeg|jpg|png|gif|webp/;
+        const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
+        const mimetype = allowedTypes.test(file.mimetype);
+
+        if (mimetype && extname) {
+            return cb(null, true);
+        } else {
+            cb(new Error('Only image files are allowed (jpeg, jpg, png, gif, webp)'));
+        }
+    }
+});
+
+app.use('/uploads', express.static(join(__dirname, '../uploads')));
 
 app.get('/api/products', async (req, res) => {
     try {
@@ -74,16 +108,10 @@ app.get('/api/products', async (req, res) => {
 
         const result = await pool.query(query, params);
 
-        // For Vercel: Use your deployment URL instead of localhost
-        const baseUrl = process.env.VERCEL_URL
-            ? `https://${process.env.VERCEL_URL}`
-            : `http://localhost:${process.env.PORT || 3000}`;
-
         result.rows.forEach(row => {
             if (row.image_url) {
-                // If image_url is already a full URL, keep it; otherwise construct it
                 if (!row.image_url.startsWith('http')) {
-                    row.image_url = `${baseUrl}/uploads/${row.image_url}`;
+                    row.image_url = `${process.env.BASE_URL}/${process.env.PRODUCT_IMAGE_PATH}/${row.image_url}`;
                 }
             }
         });
@@ -109,13 +137,9 @@ app.get('/api/products/:id', async (req, res) => {
             return res.status(404).json({ error: 'Product not found' });
         }
 
-        const baseUrl = process.env.VERCEL_URL
-            ? `https://${process.env.VERCEL_URL}`
-            : `http://localhost:${process.env.PORT || 3000}`;
-
         const product = result.rows[0];
         if (product.image_url && !product.image_url.startsWith('http')) {
-            product.image_url = `${baseUrl}/uploads/${product.image_url}`;
+            product.image_url = `${process.env.BASE_URL}/${process.env.PRODUCT_IMAGE_PATH}/${product.image_url}`;
         }
         res.json(product);
     } catch (err) {
@@ -125,23 +149,38 @@ app.get('/api/products/:id', async (req, res) => {
 });
 
 // For Vercel: Remove multer uploads - use cloud storage instead
-app.post('/api/products', async (req, res) => {
+app.post('/api/products', upload.single('image'), async (req, res) => {
     try {
-        const { name, description, price, stock, status, image_url } = req.body; // image_url should come from client
+        const { name, description, price, stock, status } = req.body;
 
         if (!name || !price || stock === undefined) {
             return res.status(400).json({ error: 'Missing required fields: name, price, stock' });
         }
 
+        let imagePath = '';
+        if (req.file) {
+            // Store relative path
+            imagePath = req.file.filename;
+        }
+
         const pool = getPool();
         const result = await pool.query(
             'INSERT INTO products (name, description, price, stock, image_url, status) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *',
-            [name, description, parseFloat(price), parseInt(stock), image_url || null, status || 'ACTIVE']
+            [name, description, parseFloat(price), parseInt(stock), imagePath, status || 'ACTIVE']
         );
 
+        result.rows[0].image_url = `${process.env.BASE_URL}/${process.env.PRODUCT_IMAGE_PATH}/${result.rows[0].image_url}`;
         res.status(201).json(result.rows[0]);
     } catch (err) {
         console.error('❌ Error creating product:', err);
+
+        if(req.file){
+            const imagePath = join(__dirname, process.env.PRODUCT_IMAGE_PATH, req.file.filename);
+            if(fs.existsSync(imagePath)){
+                fs.unlinkSync(imagePath);
+            }
+        }
+
         res.status(500).json({
             error: 'Internal server error',
             details: process.env.NODE_ENV === 'development' ? err.message : undefined
@@ -149,23 +188,37 @@ app.post('/api/products', async (req, res) => {
     }
 });
 
-app.put('/api/products/:id', async (req, res) => {
+app.put('/api/products/:id', upload.single('image'), async (req, res) => {
     const pool = getPool();
     const client = await pool.connect();
     try {
         await client.query('BEGIN');
 
         const { id } = req.params;
-        const { name, description, price, stock, status, image_url } = req.body;
+        const { name, description, price, stock, status } = req.body;
 
         if (!name || !price || stock === undefined) {
             await client.query('ROLLBACK');
             return res.status(400).json({ error: 'Missing required fields: name, price, stock' });
         }
 
+        const exitImage = await client.query(
+            'SELECT image_url FROM products WHERE product_id = $1',
+            [id]
+        );
+
+        let imagePath = '';
+        if(req.file){
+            imagePath = join(__dirname, process.env.PRODUCT_IMAGE_PATH, exitImage.rows[0].image_url);
+            if(fs.existsSync(imagePath)){
+                fs.unlinkSync(imagePath);
+            }
+            imagePath = req.file.filename;
+        }
+
         const result = await client.query(
             'UPDATE products SET name = $1, description = $2, price = $3, stock = $4, image_url = $5, status = $6 WHERE product_id = $7 RETURNING *',
-            [name, description, parseFloat(price), parseInt(stock), image_url || null, status || 'ACTIVE', id]
+            [name, description, parseFloat(price), parseInt(stock), imagePath, status || 'ACTIVE', id]
         );
 
         if (result.rows.length === 0) {
@@ -174,10 +227,20 @@ app.put('/api/products/:id', async (req, res) => {
         }
 
         await client.query('COMMIT');
+
+        result.rows[0].image_url = `${process.env.BASE_URL}/${process.env.PRODUCT_IMAGE_PATH}/${result.rows[0].image_url}`;
         res.json(result.rows[0]);
     } catch (err) {
         await client.query('ROLLBACK');
         console.error('❌ Error updating product:', err);
+
+        if(req.file){
+            const imagePath = join(__dirname, process.env.PRODUCT_IMAGE_PATH, req.file.filename);
+            if(fs.existsSync(imagePath)){
+                fs.unlinkSync(imagePath);
+            }
+        }
+
         res.status(500).json({
             error: 'Internal server error',
             details: process.env.NODE_ENV === 'development' ? err.message : undefined
