@@ -93,7 +93,7 @@
               </div>
 
               <div class="text-gray-600">Added On</div>
-              <div class="font-medium">{{ formatDate(product.created_at) }}</div>
+              <div class="font-medium">{{ formatDate(product.created_at,{preset: 'datetime'}) }}</div>
             </div>
           </div>
         </div>
@@ -111,17 +111,20 @@
 
 <script setup lang="ts">
 import { ref, onMounted, watch } from 'vue';
-import { useRoute, useRouter } from 'vue-router';
+import { useRoute } from 'vue-router';
 import { productService } from '../services/api';
 import { useCartStore } from '../stores/cart';
+import {formatDate} from "@/composables/useDateFormatter.ts";
+import {useToast} from "@/composables/useToast.ts";
+
 
 const route = useRoute();
-const router = useRouter();
 const cartStore = useCartStore();
 
 const product = ref<any>(null);
 const loading = ref(true);
 const quantity = ref(1);
+const {toast} = useToast()
 
 onMounted(async () => {
   await fetchProduct();
@@ -141,7 +144,9 @@ async function fetchProduct() {
 }
 
 function incrementQuantity() {
-  if (product.value && quantity.value < product.value.stock) {
+  if(product.value && quantity.value >= product.value.stock){
+    toast.error(`Influenced stock: ${product.value.stock}`);
+  }else {
     quantity.value++;
   }
 }
@@ -153,26 +158,23 @@ function decrementQuantity() {
 }
 
 function addToCart() {
-  if (product.value && product.value.stock > 0) {
-    cartStore.addToCart({
-      product_id: product.value.product_id,
-      name: product.value.name,
-      price: product.value.price,
-      quantity: quantity.value,
-      image_url: product.value.image_url,
-    });
+  if(product.value && cartStore.items.length > 0){
+    const item = cartStore.items.find((e)=> e.product_id == product.value.product_id);
+    if(item && item?.quantity >= product.value.stock){
+      toast.error(`Influenced stock: ${product.value.stock}`)
+    } else {
+      cartStore.addToCart({
+        product_id: product.value.product_id,
+        name: product.value.name,
+        price: product.value.price,
+        quantity: quantity.value,
+        image_url: product.value.image_url,
+        availableStock: product.value.stock,
+      });
 
-    // Show success message (you could use a toast notification here)
-    alert(`${quantity.value} ${product.value.name}(s) added to cart!`);
+      toast.success(`${quantity.value} ${product.value.name} added to cart!`)
+    }
   }
-}
-
-function formatDate(dateString: string) {
-  return new Date(dateString).toLocaleDateString('en-US', {
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric'
-  });
 }
 
 // Watch for route changes

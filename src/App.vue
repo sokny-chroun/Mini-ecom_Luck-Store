@@ -3,29 +3,28 @@
     <nav class="bg-white shadow-lg">
       <div class="container mx-auto px-4">
         <div class="flex justify-between items-center h-16">
-          <router-link
-              to="/"
-              class="text-2xl font-bold text-blue-600"
-              @click="forceUpdate"
-          >
-            MiniShop
-          </router-link>
-          <div class="flex space-x-4">
+          <div class="flex items-center space-x-2">
             <router-link
                 to="/"
-                class="text-gray-700 hover:text-blue-600"
-                :class="{ 'text-blue-600 font-bold': currentRoute === '/' }"
+                class="text-2xl font-bold text-blue-600 flex items-center"
                 @click="forceUpdate"
             >
-              Home
+              <img src="./assets/mini-shop.png" alt="MiniShop" class="w-8 h-8 mr-2 rounded-md"> MiniShop
             </router-link>
+          </div>
+          <div class="flex space-x-4">
             <router-link
                 to="/cart"
                 class="text-gray-700 hover:text-blue-600"
                 :class="{ 'text-blue-600 font-bold': currentRoute === '/cart' }"
                 @click="forceUpdate"
             >
-              Cart
+              <div class="relative inline-block">
+                Cart
+                <span v-if="cartStore.totalItems > 0" class="absolute -top-2 -right-2 inline-flex items-center justify-center h-5 w-5 text-xs font-bold leading-none text-white bg-red-500 rounded-full">
+                  {{ cartStore.totalItems }}
+                </span>
+              </div>
             </router-link>
             <router-link
                 to="/admin"
@@ -53,22 +52,26 @@
       <button @click="toggleDebug" class="mt-2 text-xs">Hide Debug</button>
     </div>
   </div>
+  <Toast />
 </template>
 
 <script setup lang="ts">
 import { RouterView, RouterLink, useRoute } from 'vue-router'
 import { ref, computed, watch } from 'vue'
+import { useCartStore } from './stores/cart';
+import Toast from "@/components/ui/Toast.vue";
 
-const route = useRoute()
+const route = useRoute();
+const currentRoute = computed(() => route.path);
+const routeKey = ref(0);
+const cartStore = useCartStore();
 const showDebug = ref(false)
 const forceUpdateCounter = ref(0)
 
-const currentRoute = computed(() => route.path)
-const routeKey = computed(() => `${route.path}-${forceUpdateCounter.value}`)
-
-function forceUpdate() {
+const forceUpdate = () => {
   console.log('🔄 Forcing route update')
   forceUpdateCounter.value++
+  routeKey.value++
 }
 
 function toggleDebug() {

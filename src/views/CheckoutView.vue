@@ -89,11 +89,11 @@
                 <div class="flex-1">
                   <h3 class="font-medium">{{ item.name }}</h3>
                   <p class="text-sm text-gray-500">
-                    ${{ item.price.toFixed(2) }} × {{ item.quantity }}
+                    {{ formatPrice(item.price) }} × {{ item.quantity }}
                   </p>
                 </div>
                 <span class="font-medium">
-                  ${{ (item.price * item.quantity).toFixed(2) }}
+                  {{ formatPrice(item.price * item.quantity) }}
                 </span>
               </div>
             </div>
@@ -102,7 +102,7 @@
               <div class="space-y-2 mb-6">
                 <div class="flex justify-between">
                   <span class="text-gray-600">Subtotal</span>
-                  <span>${{ cartStore.totalPrice.toFixed(2) }}</span>
+                  {{ formatPrice(cartStore.totalPrice) }}
                 </div>
                 <div class="flex justify-between">
                   <span class="text-gray-600">Shipping</span>
@@ -110,11 +110,11 @@
                 </div>
                 <div v-if="cartStore.totalPrice > 100" class="flex justify-between">
                   <span class="text-gray-600">Discount (10%)</span>
-                  <span class="text-green-600">-${{ (cartStore.totalPrice * 0.1).toFixed(2) }}</span>
+                  <span class="text-green-600">-{{ formatPrice(cartStore.totalPrice * 0.1) }}</span>
                 </div>
                 <div class="flex justify-between text-lg font-bold border-t pt-2">
                   <span>Total</span>
-                  <span>${{ calculateTotal().toFixed(2) }}</span>
+                  {{ formatPrice(calculateTotal()) }}
                 </div>
               </div>
 
@@ -152,10 +152,12 @@ import { ref, reactive } from 'vue';
 import { useRouter } from 'vue-router';
 import { useCartStore } from '../stores/cart';
 import { orderService } from '../services/api';
+import { useFormatters } from '@/composables/useFormatters';
 
 const cartStore = useCartStore();
 const router = useRouter();
 const loading = ref(false);
+const { formatPrice } = useFormatters();
 
 const form = reactive({
   name: '',

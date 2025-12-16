@@ -47,46 +47,50 @@
                   </div>
                 </td>
                 <td class="py-4 px-4">
-                  <span class="text-gray-900">${{ item.price }}</span>
+                  <span class="text-gray-900">{{ formatPrice(item.price) }}</span>
                 </td>
                 <td class="py-4 px-4">
                   <div class="flex items-center">
                     <button
-                        @click="updateQuantity(item.product_id, item.quantity - 1)"
+                        @click="decrementQuantity(item.product_id)"
                         :disabled="item.quantity <= 1"
-                        class="w-8 h-8 flex items-center justify-center border rounded-l hover:bg-gray-100 disabled:opacity-50"
+                        class="w-8 h-8 flex items-center justify-center border rounded-l hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       -
                     </button>
                     <input
                         v-model.number="item.quantity"
-                        @change="updateQuantity(item.product_id, item.quantity)"
+                        @change="updateQuantityInput(item.product_id, item.quantity)"
                         type="number"
                         min="1"
+                        :max="item.availableStock"
                         class="w-12 h-8 text-center border-y"
                     >
                     <button
-                        @click="updateQuantity(item.product_id, item.quantity + 1)"
-                        class="w-8 h-8 flex items-center justify-center border rounded-r hover:bg-gray-100"
+                        @click="incrementQuantity(item.product_id)"
+                        :disabled="item.quantity >= item.availableStock"
+                        class="w-8 h-8 flex items-center justify-center border rounded-r hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       +
                     </button>
                   </div>
+                  <p v-if="item.availableStock <= 5 && item.quantity <= item.availableStock"
+                     class="text-xs text-red-600 mt-1">
+                    Only {{ item.availableStock }} left in stock!
+                  </p>
                 </td>
                 <td class="py-4 px-4">
                     <span class="font-medium text-gray-900">
-                      ${{ item.price * item.quantity }}
+                      {{ formatPrice(item.price * item.quantity) }}
                     </span>
                 </td>
                 <td class="py-4 px-4">
                   <button
-                      @click="removeItem(item.product_id)"
-                      class="text-red-600 hover:text-red-800 p-1"
+                      @click="showDeleteConfirmation(item)"
+                      class="text-red-600 hover:text-red-900 transition-colors"
                       title="Remove item"
                   >
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
-                    </svg>
+                    <TrashIcon class="h-5 w-5" />
                   </button>
                 </td>
               </tr>
@@ -96,15 +100,15 @@
         </div>
 
         <div class="flex justify-between">
-          <router-link to="/" class="text-blue-600 hover:text-blue-800 font-medium flex items-center">
+          <router-link to="/" class="text-blue-600 hover:text-blue-800 font-medium flex items-center transition-colors">
             <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path>
             </svg>
             Continue Shopping
           </router-link>
           <button
-              @click="clearCart"
-              class="text-red-600 hover:text-red-800 font-medium flex items-center"
+              @click="showClearCartConfirmation"
+              class="text-red-600 hover:text-red-800 font-medium flex items-center transition-colors"
           >
             <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
@@ -122,7 +126,7 @@
           <div class="space-y-4 mb-6">
             <div class="flex justify-between">
               <span class="text-gray-600">Subtotal</span>
-              <span>${{ cartStore.totalPrice.toFixed(2) }}</span>
+              <span>{{ formatPrice(cartStore.totalPrice) }}</span>
             </div>
             <div class="flex justify-between">
               <span class="text-gray-600">Shipping</span>
@@ -130,115 +134,226 @@
             </div>
             <div v-if="cartStore.totalPrice > 100" class="flex justify-between">
               <span class="text-gray-600">Discount (10%)</span>
-              <span class="text-green-600">-${{ (cartStore.totalPrice * 0.1).toFixed(2) }}</span>
+              <span class="text-green-600">-{{ formatPrice(cartStore.totalPrice * 0.1) }}</span>
             </div>
             <div class="border-t pt-4">
               <div class="flex justify-between text-lg font-bold">
                 <span>Total</span>
-                <span>${{ calculateTotal().toFixed(2) }}</span>
+                <span class="text-xl font-bold">{{ formatPrice(calculateTotal()) }}</span>
               </div>
+              <p v-if="cartStore.totalPrice < 100" class="text-sm text-gray-500 mt-2">
+                Add ${{ formatPrice(100 - cartStore.totalPrice) }} more to get 10% discount!
+              </p>
             </div>
           </div>
 
-          <div class="mb-6">
-            <div class="flex items-center text-green-600 mb-2">
-              <svg class="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 20 20">
+          <div class="mb-6 space-y-2">
+            <div class="flex items-center text-green-600">
+              <svg class="w-5 h-5 mr-2 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
                 <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"></path>
               </svg>
-              <span>Free shipping on all orders</span>
+              <span class="text-sm">Free shipping on all orders</span>
             </div>
             <div class="flex items-center text-green-600">
-              <svg class="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 20 20">
+              <svg class="w-5 h-5 mr-2 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
                 <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"></path>
               </svg>
-              <span>10% off on orders over $100</span>
+              <span class="text-sm">10% off on orders over $100</span>
             </div>
           </div>
 
           <button
               @click="goToCheckout"
-              class="w-full bg-green-600 text-white py-3 px-6 rounded-lg font-medium hover:bg-green-700 transition duration-200"
+              :disabled="cartStore.items.length === 0"
+              class="w-full bg-green-600 text-white py-3 px-6 rounded-lg font-medium hover:bg-green-700 transition duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             Proceed to Checkout
           </button>
         </div>
       </div>
     </div>
-
-    <!-- Error Message-->
-    <div v-if="showErrorMessage" class="fixed bottom-4 right-4 bg-red-500 text-white px-4 py-3 rounded-lg shadow-lg z-50 animate-fade-in">
-      <div class="flex items-center">
-        <svg class="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 20 20">
-          <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"/>
-        </svg>
-        {{ errorMessage }}
-      </div>
-    </div>
   </div>
+
+  <!-- Confirm Dialog -->
+  <ConfirmDialog
+      v-model="isConfirmOpen"
+      :title="confirmOptions.title"
+      :message="confirmOptions.message"
+      :confirm-text="confirmOptions.confirmText"
+      :cancel-text="confirmOptions.cancelText"
+      :icon="confirmOptions.icon"
+      :icon-container-class="confirmOptions.iconContainerClass"
+      :icon-class="confirmOptions.iconClass"
+      @confirm="handleConfirm"
+      @cancel="handleCancel"
+  />
 </template>
 
 <script setup lang="ts">
 import { useCartStore } from '../stores/cart';
 import { useRouter } from 'vue-router';
-import {ref} from "vue";
+import { useFormatters } from '@/composables/useFormatters';
+import { useToast } from "@/composables/useToast";
+import { TrashIcon, ExclamationTriangleIcon } from "@heroicons/vue/24/outline";
+import ConfirmDialog from '@/components/ui/ConfirmDialog.vue';
+import { ref, computed } from 'vue';
 
 const cartStore = useCartStore();
 const router = useRouter();
-const errorMessage = ref('')
-const showErrorMessage = ref(false)
+const { formatPrice } = useFormatters();
+const { toast } = useToast();
 
- function updateQuantity(productId: number, newQuantity: number) {
-  if(cartStore.items.length >= 1){
-    const item = cartStore.items.find((e)=> e.product_id == productId)
-    if(item && item.availableStock < newQuantity){
-      errorMessage.value = 'Not enough stock available'
-      showErrorMessage.value = true
-      // Hide error message after 3 seconds
-      setTimeout(() => {
-        showErrorMessage.value = false
-      }, 3000)
-    }else{
-      if (newQuantity >= 1) {
-        cartStore.updateQuantity(productId, newQuantity);
+// Dialog state
+const isConfirmOpen = ref(false);
+const confirmOptions = ref({
+  title: '',
+  message: '',
+  confirmText: 'Confirm',
+  cancelText: 'Cancel',
+  icon: ExclamationTriangleIcon,
+  iconContainerClass: '',
+  iconClass: ''
+});
+
+// Pending actions
+const pendingAction = ref<{
+  type: 'removeItem' | 'clearCart';
+  productId?: number;
+  itemName?: string;
+} | null>(null);
+
+// Computed properties
+const discountAmount = computed(() => {
+  return cartStore.totalPrice > 100 ? cartStore.totalPrice * 0.1 : 0;
+});
+
+const finalTotal = computed(() => {
+  return cartStore.totalPrice - discountAmount.value;
+});
+
+// Confirmation dialog functions
+const showDeleteConfirmation = (item: any) => {
+  pendingAction.value = {
+    type: 'removeItem',
+    productId: item.product_id,
+    itemName: item.name
+  };
+
+  confirmOptions.value = {
+    title: 'Remove Item',
+    message: `Are you sure you want to remove "${item.name}" from your cart?`,
+    confirmText: 'Remove',
+    cancelText: 'Keep Item',
+    icon: TrashIcon,
+    iconContainerClass: 'bg-red-100',
+    iconClass: 'text-red-600'
+  };
+
+  isConfirmOpen.value = true;
+};
+
+const showClearCartConfirmation = () => {
+  pendingAction.value = {
+    type: 'clearCart'
+  };
+
+  confirmOptions.value = {
+    title: 'Clear Cart',
+    message: `Are you sure you want to clear your entire cart? This will remove ${cartStore.items.length} item(s).`,
+    confirmText: 'Clear Cart',
+    cancelText: 'Keep Items',
+    icon: ExclamationTriangleIcon,
+    iconContainerClass: 'bg-yellow-100',
+    iconClass: 'text-yellow-600'
+  };
+
+  isConfirmOpen.value = true;
+};
+
+const handleConfirm = () => {
+  if (!pendingAction.value) return;
+
+  switch (pendingAction.value.type) {
+    case 'removeItem':
+      if (pendingAction.value.productId) {
+        cartStore.removeFromCart(pendingAction.value.productId);
+        toast.success(`"${pendingAction.value.itemName}" removed from cart`);
       }
-    }
-  }else{
-    if (newQuantity >= 1) {
-      cartStore.updateQuantity(productId, newQuantity);
-    }
-  }
-}
+      break;
 
-function removeItem(productId: number) {
-  if (confirm('Are you sure you want to remove this item from your cart?')) {
-    cartStore.removeFromCart(productId);
+    case 'clearCart':
+      cartStore.clearCart();
+      toast.success('Cart cleared successfully');
+      break;
   }
-}
 
-function clearCart() {
-  if (confirm('Are you sure you want to clear your cart?')) {
-    cartStore.clearCart();
+  pendingAction.value = null;
+  isConfirmOpen.value = false;
+};
+
+const handleCancel = () => {
+  pendingAction.value = null;
+  isConfirmOpen.value = false;
+};
+
+// Quantity management
+const decrementQuantity = (productId: number) => {
+  const item = cartStore.items.find(item => item.product_id === productId);
+  if (item && item.quantity > 1) {
+    cartStore.updateQuantity(productId, item.quantity - 1);
   }
-}
+};
 
-function calculateTotal() {
-  let total = cartStore.totalPrice;
-  if (total > 100) {
-    total *= 0.9; // 10% discount
+const incrementQuantity = (productId: number) => {
+  const item = cartStore.items.find(item => item.product_id === productId);
+  if (item && item.quantity < item.availableStock) {
+    cartStore.updateQuantity(productId, item.quantity + 1);
+  } else if (item) {
+    toast.error(`Cannot add more. Only ${item.availableStock} available in stock.`);
   }
-  return total;
-}
+};
 
-function goToCheckout() {
+const updateQuantityInput = (productId: number, newQuantity: number) => {
+  const item = cartStore.items.find(item => item.product_id === productId);
+
+  if (!item) return;
+
+  if (newQuantity < 1) {
+    cartStore.updateQuantity(productId, 1);
+    toast.info('Quantity cannot be less than 1');
+    return;
+  }
+
+  if (newQuantity > item.availableStock) {
+    cartStore.updateQuantity(productId, item.availableStock);
+    toast.error(`Quantity limited to ${item.availableStock} (available stock)`);
+    return;
+  }
+
+  cartStore.updateQuantity(productId, newQuantity);
+};
+
+// Calculations
+const calculateTotal = () => {
+  return finalTotal.value;
+};
+
+// Navigation
+const goToCheckout = () => {
+  if (cartStore.items.length === 0) {
+    toast.error('Your cart is empty');
+    return;
+  }
   router.push('/checkout');
-}
+};
 
-function handleImageError(event: Event) {
-  const img = event.target as HTMLImageElement
-  const fallbackUrl = 'https://via.placeholder.com/400x300?text=Image+Not+Found'
+// Image error handling
+const handleImageError = (event: Event) => {
+  const img = event.target as HTMLImageElement;
+  const fallbackUrl = 'https://via.placeholder.com/400x300?text=Product+Image';
   if (img.src !== fallbackUrl && !img.src.includes('placeholder.com')) {
-    img.src = fallbackUrl
-    img.onerror = null
+    img.src = fallbackUrl;
+    img.onerror = null;
   }
-}
+};
 </script>

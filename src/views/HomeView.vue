@@ -1,6 +1,21 @@
 <template>
   <div>
-    <h1 class="text-3xl font-bold mb-8">Products</h1>
+    <div class="flex flex-col md:flex-row md:items-center justify-between mb-8 gap-4">
+      <h1 class="text-3xl font-bold">Products</h1>
+      <div class="relative w-full md:w-96">
+        <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+          <svg class="h-5 w-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+          </svg>
+        </div>
+        <input
+            v-model="searchQuery"
+            type="text"
+            placeholder="Search products by name or description..."
+            class="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md leading-5 bg-white placeholder-gray-500 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+        >
+      </div>
+    </div>
     <!-- Loading state -->
     <div v-if="loading" class="text-center py-12">
       <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto"></div>
@@ -16,7 +31,7 @@
     </div>
 
     <!-- Empty state -->
-    <div v-else-if="products.length === 0" class="text-center py-12">
+    <div v-else-if="filteredProducts.length === 0" class="text-center py-12">
       <div class="text-gray-400 mb-4">
         <svg class="w-16 h-16 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4"></path>
@@ -29,7 +44,7 @@
     <!-- Products grid -->
     <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
       <div
-          v-for="product in products"
+          v-for="product in filteredProducts"
           :key="product.product_id"
           class="bg-white rounded-lg shadow-md overflow-hidden hover:shadow-xl transition-shadow duration-300"
       >
@@ -55,7 +70,7 @@
           <p class="text-gray-600 text-sm mb-3 line-clamp-2">{{ product.description }}</p>
 
           <div class="flex justify-between items-center mb-4">
-            <span class="text-xl font-bold text-blue-600">${{ product.price }}</span>
+            <span class="text-xl font-bold text-blue-600">{{ formatPrice(product.price) }}</span>
             <span class="text-sm text-gray-500">Stock: {{ product.stock }}</span>
           </div>
 
@@ -86,33 +101,15 @@
         </div>
       </div>
     </div>
-
-    <!-- Success message (toast) -->
-    <div v-if="showSuccessMessage" class="fixed bottom-4 right-4 bg-green-500 text-white px-4 py-3 rounded-lg shadow-lg z-50 animate-fade-in">
-      <div class="flex items-center">
-        <svg class="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 20 20">
-          <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"></path>
-        </svg>
-        {{ successMessage }}
-      </div>
-    </div>
-
-    <!-- Error Message-->
-    <div v-if="showErrorMessage" class="fixed bottom-4 right-4 bg-red-500 text-white px-4 py-3 rounded-lg shadow-lg z-50 animate-fade-in">
-      <div class="flex items-center">
-        <svg class="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 20 20">
-          <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"/>
-        </svg>
-        {{ errorMessage }}
-      </div>
-    </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import {onMounted, ref} from 'vue'
+import {onMounted, ref, watch} from 'vue'
 import {useCartStore} from '@/stores/cart'
 import {productService} from '@/services/api'
+import { useFormatters } from '@/composables/useFormatters'
+import {useToast} from "@/composables/useToast.ts";
 
 // Define interface for Product
 interface Product {
@@ -128,16 +125,30 @@ interface Product {
 
 // Define reactive variables
 const products = ref<Product[]>([])
+const filteredProducts = ref<Product[]>([])
 const loading = ref(true)
 const error = ref('')
+const searchQuery = ref('')
+
+// Watch for search query changes
+watch(searchQuery, (newQuery) => {
+  if (!newQuery.trim()) {
+    filteredProducts.value = [...products.value]
+    return
+  }
+  
+  const query = newQuery.toLowerCase().trim()
+  filteredProducts.value = products.value.filter(product => 
+    product.name.toLowerCase().includes(query) ||
+    product.description?.toLowerCase().includes(query)
+  )
+})
 const addingToCartId = ref<number | null>(null)
-const showSuccessMessage = ref(false)
-const showErrorMessage = ref(false)
-const errorMessage = ref('')
-const successMessage = ref('')
 
 // Initialize cart store
 const cartStore = useCartStore()
+const { formatPrice } = useFormatters()
+const {toast} = useToast()
 
 // Fetch products on mount
 onMounted(() => {
@@ -148,12 +159,10 @@ onMounted(() => {
 async function fetchProducts() {
   try {
     loading.value = true
-    error.value = ''
-
     products.value = await productService.getProducts({status: 'active'})
-
-  } catch (err: any) {
-    error.value = err.message || 'Failed to load products. Please try again.'
+    filteredProducts.value = [...products.value]
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : 'Failed to load products'
   } finally {
     loading.value = false
   }
@@ -166,17 +175,12 @@ async function addToCart(product: Product) {
   try {
     addingToCartId.value = product.product_id
 
-    // Add a small delay for better UX
+
     await new Promise(resolve => setTimeout(resolve, 300))
 
     const item = cartStore.items.find((e) => e.product_id == product.product_id);
     if(item && item.quantity >= product.stock){
-      showErrorMessage.value = true;
-      errorMessage.value = `Influenced stock: ${product.stock}`
-      // Hide error message after 3 seconds
-      setTimeout(() => {
-        showErrorMessage.value = false
-      }, 3000)
+      toast.error(`Influenced stock: ${product.stock}`)
     } else {
       cartStore.addToCart({
         product_id: product.product_id,
@@ -186,15 +190,7 @@ async function addToCart(product: Product) {
         image_url: product.image_url,
         availableStock: product.stock
       })
-
-      // Show success message
-      successMessage.value = `Added ${product.name} to cart!`
-      showSuccessMessage.value = true
-
-      // Hide success message after 3 seconds
-      setTimeout(() => {
-        showSuccessMessage.value = false
-      }, 3000)
+      toast.success(`Added ${product.name} to cart!`)
     }
 
   } catch (err) {

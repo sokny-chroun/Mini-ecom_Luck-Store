@@ -300,6 +300,7 @@
 import { ref, onMounted } from 'vue';
 import { useRoute } from 'vue-router';
 import { orderService } from '@/services/api';
+import {formatDate} from "@/composables/useDateFormatter.ts";
 
 interface OrderItem {
   product_id: number;
@@ -355,20 +356,6 @@ onMounted(async () => {
     loading.value = false;
   }
 });
-
-// Helper functions
-function formatDate(dateString: string) {
-  if (!dateString) return 'N/A';
-  const date = new Date(dateString);
-  return date.toLocaleDateString('en-US', {
-    weekday: 'long',
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit'
-  });
-}
 
 function formatProductId(productId: number) {
   return `PROD-${productId?.toString().padStart(4, '0') || '0000'}`;
