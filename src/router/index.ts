@@ -7,6 +7,8 @@ const CheckoutView = () => import('../views/CheckoutView.vue')
 const OrderConfirmation = () => import('../views/OrderConfirmation.vue')
 const AdminProducts = () => import('../views/admin/ProductsView.vue')
 const AdminProductForm = () => import('../views/admin/ProductForm.vue')
+const AboutView = () => import('../views/AboutView.vue')
+const ContactView = () => import('../views/ContactView.vue')
 
 const routes = [
     {
@@ -51,6 +53,16 @@ const routes = [
         name: 'EditProduct',
         component: AdminProductForm,
         props: true
+    },
+    {
+        path: '/about',
+        name: 'About',
+        component: AboutView
+    },
+    {
+        path: '/contact',
+        name: 'Contact',
+        component: ContactView
     },
     {
         path: '/:pathMatch(.*)*',

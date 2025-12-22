@@ -1,5 +1,5 @@
 <template>
-  <div class="max-w-6xl mx-auto">
+  <div class="max-w-6xl mx-auto m-4">
     <h1 class="text-3xl font-bold mb-8">Shopping Cart</h1>
 
     <div v-if="cartStore.items.length === 0" class="text-center py-12 bg-white rounded-lg shadow">

@@ -1,7 +1,6 @@
 <template>
-  <div>
+  <div class="m-6">
     <div class="flex flex-col md:flex-row md:items-center justify-between mb-8 gap-4">
-      <h1 class="text-3xl font-bold">Products</h1>
       <div class="relative w-full md:w-96">
         <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
           <svg class="h-5 w-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -42,61 +41,93 @@
     </div>
 
     <!-- Products grid -->
-    <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+    <div v-else class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
       <div
           v-for="product in filteredProducts"
           :key="product.product_id"
-          class="bg-white rounded-lg shadow-md overflow-hidden hover:shadow-xl transition-shadow duration-300"
+          class="group bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden hover:shadow-lg transition-all duration-300 hover:-translate-y-1 flex flex-col h-full"
       >
-        <div class="relative">
-          <img
-              :src="product.image_url"
-              :alt="product.name"
-              class="w-full h-48 object-cover"
-              @error="handleImageError"
-          >
-          <div class="absolute top-2 right-2">
-            <span v-if="product.stock < 10 && product.stock > 0" class="bg-red-100 text-red-800 text-xs px-2 py-1 rounded">
-              Low Stock
+        <div class="relative overflow-hidden">
+          <div class="aspect-w-1 aspect-h-1 w-full">
+            <img
+                :src="product.image_url"
+                :alt="product.name"
+                class="w-full h-56 object-cover transition-transform duration-500 group-hover:scale-105"
+                @error="handleImageError"
+            >
+          </div>
+          
+          <!-- Stock Status Badge -->
+          <div class="absolute top-3 right-3">
+            <span v-if="product.stock < 10 && product.stock > 0" 
+                  class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800 animate-pulse">
+              <span class="w-2 h-2 mr-1 bg-red-500 rounded-full"></span>
+              Only {{ product.stock }} left
             </span>
-            <span v-else-if="product.stock === 0" class="bg-gray-100 text-gray-800 text-xs px-2 py-1 rounded">
+            <span v-else-if="product.stock === 0" 
+                  class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+              <span class="w-2 h-2 mr-1 bg-gray-500 rounded-full"></span>
               Out of Stock
+            </span>
+            <span v-else
+                  class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+              <span class="w-2 h-2 mr-1 bg-green-500 rounded-full"></span>
+              In Stock
             </span>
           </div>
         </div>
 
-        <div class="p-4">
-          <h3 class="font-bold text-lg mb-2 truncate">{{ product.name }}</h3>
-          <p class="text-gray-600 text-sm mb-3 line-clamp-2">{{ product.description }}</p>
-
-          <div class="flex justify-between items-center mb-4">
-            <span class="text-xl font-bold text-blue-600">{{ formatPrice(product.price) }}</span>
-            <span class="text-sm text-gray-500">Stock: {{ product.stock }}</span>
+        <div class="p-5 flex flex-col flex-grow">
+          <div class="flex-grow">
+            <h3 class="text-lg font-semibold text-gray-900 mb-1.5 group-hover:text-blue-600 transition-colors">
+              {{ product.name }}
+            </h3>
+            <p class="text-gray-600 text-sm mb-4 line-clamp-2">{{ product.description }}</p>
           </div>
 
-          <div class="flex space-x-2">
-            <router-link
-                :to="`/product/${product.product_id}`"
-                class="flex-1 bg-gray-100 text-gray-700 py-2 px-4 rounded text-center hover:bg-gray-200 transition-colors"
-            >
-              View Details
-            </router-link>
-            <button
-                @click="addToCart(product)"
-                :disabled="product.stock === 0 || addingToCartId === product.product_id"
-                class="flex-1 bg-blue-600 text-white py-2 px-4 rounded hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors flex items-center justify-center"
-            >
-              <template v-if="addingToCartId === product.product_id">
-                <svg class="animate-spin -ml-1 mr-2 h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
-                  <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                  <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+          <div class="mt-auto">
+            <div class="flex items-center justify-between mb-4">
+              <div>
+                <span class="text-2xl font-bold text-gray-900">{{ formatPrice(product.price) }}</span>
+                <span v-if="(Number(product.price) + 1) > Number(product.price)" class="ml-2 text-sm text-gray-500 line-through">
+                  {{ formatPrice(Number(product.price) + 1) }}
+                </span>
+              </div>
+              <span class="text-sm text-gray-500">{{ product.stock }} in stock</span>
+            </div>
+
+            <div class="flex space-x-3">
+              <router-link
+                  :to="`/product/${product.product_id}`"
+                  class="flex-1 inline-flex items-center justify-center px-4 py-2.5 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors"
+              >
+                <svg class="-ml-0.5 mr-2 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
                 </svg>
-                Adding...
-              </template>
-              <template v-else>
-                {{ product.stock === 0 ? 'Out of Stock' : 'Add to Cart' }}
-              </template>
-            </button>
+                View
+              </router-link>
+              
+              <button
+                  @click="addToCart(product)"
+                  :disabled="product.stock === 0 || addingToCartId === product.product_id"
+                  class="flex-1 inline-flex items-center justify-center px-4 py-2.5 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-70 disabled:cursor-not-allowed transition-colors"
+              >
+                <template v-if="addingToCartId === product.product_id">
+                  <svg class="animate-spin -ml-1 mr-2 h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                  Adding...
+                </template>
+                <template v-else>
+                  <svg class="-ml-1 mr-2 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                  </svg>
+                  {{ product.stock === 0 ? 'Out of Stock' : 'Add to Cart' }}
+                </template>
+              </button>
+            </div>
           </div>
         </div>
       </div>
