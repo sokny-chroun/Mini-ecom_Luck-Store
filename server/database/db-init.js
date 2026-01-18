@@ -2,26 +2,72 @@ const { Pool } = require('pg');
 require('dotenv').config();
 
 // Database connection
+// const pool = new Pool({
+//     connectionString: process.env.DATABASE_URL,
+//     ssl: { rejectUnauthorized: false }
+// });
 const pool = new Pool({
     connectionString: process.env.DATABASE_URL,
-    ssl: { rejectUnauthorized: false }
+    ssl: process.env.NODE_ENV === 'production'
+        ? { rejectUnauthorized: false }
+        : false
 });
 
+
 // SQL schema
+// const schemaSQL = `
+// -- Products table
+// CREATE TABLE IF NOT EXISTS products (
+//     product_id SERIAL PRIMARY KEY,
+//     name VARCHAR(100) NOT NULL,
+//     description VARCHAR(500),
+//     price DECIMAL(10,2) NOT NULL,
+//     stock INT NOT NULL DEFAULT 0,
+//     image_url VARCHAR(255),
+//     status VARCHAR(10) DEFAULT 'ACTIVE',
+//     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+// );
+
+// -- Orders table
+// CREATE TABLE IF NOT EXISTS orders (
+//     order_id SERIAL PRIMARY KEY,
+//     customer_name VARCHAR(100) NOT NULL,
+//     customer_email VARCHAR(100) NOT NULL,
+//     customer_phone VARCHAR(20),
+//     shipping_address VARCHAR(255) NOT NULL,
+//     total_amount DECIMAL(10,2) NOT NULL,
+//     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+// );
+
+// -- Order items table
+// CREATE TABLE IF NOT EXISTS order_items (
+//     order_item_id SERIAL PRIMARY KEY,
+//     order_id INT REFERENCES orders(order_id) ON DELETE CASCADE,
+//     product_id INT REFERENCES products(product_id),
+//     quantity INT NOT NULL,
+//     unit_price DECIMAL(10,2) NOT NULL,
+//     subtotal DECIMAL(10,2) NOT NULL
+// );
+// `;
 const schemaSQL = `
--- Products table
 CREATE TABLE IF NOT EXISTS products (
     product_id SERIAL PRIMARY KEY,
     name VARCHAR(100) NOT NULL,
     description VARCHAR(500),
     price DECIMAL(10,2) NOT NULL,
     stock INT NOT NULL DEFAULT 0,
+
+    -- Old style (Cloudinary/local URL)
     image_url VARCHAR(255),
+
+    -- NEW: store image in DB
+    image_data BYTEA,
+    image_mime VARCHAR(50),
+
     status VARCHAR(10) DEFAULT 'ACTIVE',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Orders table
 CREATE TABLE IF NOT EXISTS orders (
     order_id SERIAL PRIMARY KEY,
     customer_name VARCHAR(100) NOT NULL,
@@ -32,7 +78,6 @@ CREATE TABLE IF NOT EXISTS orders (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Order items table
 CREATE TABLE IF NOT EXISTS order_items (
     order_item_id SERIAL PRIMARY KEY,
     order_id INT REFERENCES orders(order_id) ON DELETE CASCADE,
@@ -42,6 +87,12 @@ CREATE TABLE IF NOT EXISTS order_items (
     subtotal DECIMAL(10,2) NOT NULL
 );
 `;
+
+const migrateSQL = `
+ALTER TABLE products ADD COLUMN IF NOT EXISTS image_data BYTEA;
+ALTER TABLE products ADD COLUMN IF NOT EXISTS image_mime VARCHAR(50);
+`;
+
 
 // Create indexes
 const indexesSQL = `
@@ -75,6 +126,9 @@ const initializeDatabase = async () => {
         console.log('🔨 Creating tables...');
         await client.query(schemaSQL);
         console.log('Tables created successfully');
+
+        // Apply lightweight migrations
+        await client.query(migrateSQL);
 
         // Create indexes
         console.log('Creating indexes...');

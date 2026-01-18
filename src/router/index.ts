@@ -1,10 +1,12 @@
 import {createRouter, createWebHistory} from 'vue-router'
+import { useAuthStore } from '@/stores/auth'
 
 const HomeView = () => import('../views/HomeView.vue')
 const ProductDetail = () => import('../views/ProductDetail.vue')
 const CartView = () => import('../views/CartView.vue')
 const CheckoutView = () => import('../views/CheckoutView.vue')
 const OrderConfirmation = () => import('../views/OrderConfirmation.vue')
+const AdminLogin = () => import('../views/admin/AdminLogin.vue')
 const AdminProducts = () => import('../views/admin/ProductsView.vue')
 const AdminProductForm = () => import('../views/admin/ProductForm.vue')
 const AboutView = () => import('../views/AboutView.vue')
@@ -39,20 +41,28 @@ const routes = [
         props: true
     },
     {
+        path: '/admin/login',
+        name: 'AdminLogin',
+        component: AdminLogin
+    },
+    {
         path: '/admin',
         name: 'AdminProducts',
-        component: AdminProducts
+        component: AdminProducts,
+        meta: { requiresAuth: true }
     },
     {
         path: '/admin/product/new',
         name: 'NewProduct',
-        component: AdminProductForm
+        component: AdminProductForm,
+        meta: { requiresAuth: true }
     },
     {
         path: '/admin/product/edit/:id',
         name: 'EditProduct',
         component: AdminProductForm,
-        props: true
+        props: true,
+        meta: { requiresAuth: true }
     },
     {
         path: '/about',
@@ -73,6 +83,24 @@ const routes = [
 const router = createRouter({
     history: createWebHistory(),
     routes
+})
+
+// Navigation guard for admin routes
+router.beforeEach((to, from, next) => {
+    const authStore = useAuthStore()
+    
+    // Initialize auth state
+    authStore.initAuth()
+    
+    // Check if route requires authentication
+    if (to.meta.requiresAuth && !authStore.isAuthenticated) {
+        next({ name: 'AdminLogin' })
+    } else if (to.name === 'AdminLogin' && authStore.isAuthenticated) {
+        // If already logged in, redirect to admin dashboard
+        next({ name: 'AdminProducts' })
+    } else {
+        next()
+    }
 })
 
 export default router

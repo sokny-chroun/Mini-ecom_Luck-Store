@@ -25,7 +25,9 @@ const getPool = () => {
     if (!pool) {
         pool = new Pool({
             connectionString: process.env.DATABASE_URL,
-            ssl: { rejectUnauthorized: false },
+            ssl: process.env.NODE_ENV === 'production'
+                ? { rejectUnauthorized: false }
+                : false,
             max: 1,
             idleTimeoutMillis: 30000,
             connectionTimeoutMillis: 5000
@@ -40,6 +42,32 @@ cloudinary.config({
     api_key: process.env.CLOUDINARY_API_KEY,
     api_secret: process.env.CLOUDINARY_API_SECRET
 });
+
+const isCloudinaryConfigured = () => {
+    return Boolean(
+        process.env.CLOUDINARY_CLOUD_NAME &&
+        process.env.CLOUDINARY_API_KEY &&
+        process.env.CLOUDINARY_API_SECRET
+    );
+};
+
+const normalizeImageUrl = (imageUrl) => {
+    if (!imageUrl) return '';
+    if (/^https?:\/\//i.test(imageUrl)) return imageUrl;
+    if (!isCloudinaryConfigured()) return imageUrl;
+    return cloudinary.url(imageUrl, { secure: true });
+};
+
+const buildImageUrl = (row) => {
+    if (row.image_url) {
+        return normalizeImageUrl(row.image_url);
+    }
+    if (row.image_data && row.image_mime) {
+        const base64 = Buffer.from(row.image_data).toString('base64');
+        return `data:${row.image_mime};base64,${base64}`;
+    }
+    return '';
+};
 
 // Upload to Cloudinary function
 const uploadToCloudinary = async (fileBuffer, fileName, options = {}) => {
@@ -217,7 +245,11 @@ app.get('/api/products', async (req, res) => {
 
         const pool = getPool();
         const result = await pool.query(query, params);
-        res.json(result.rows);
+        const products = result.rows.map((row) => ({
+            ...row,
+            image_url: buildImageUrl(row)
+        }));
+        res.json(products);
 
     } catch (err) {
         console.error('❌ Error fetching products:', err);
@@ -238,6 +270,7 @@ app.get('/api/products/:id', async (req, res) => {
         }
         // Convert relative path to full URL
         const product = result.rows[0];
+        product.image_url = buildImageUrl(product);
         res.json(product);
     } catch (err) {
         console.error(err);
@@ -254,21 +287,39 @@ app.post('/api/products', upload.single('image'), async (req, res) => {
         }
 
         let imageUrl = '';
+        let imageData = null;
+        let imageMime = null;
 
         if (req.file) {
-            // Upload to cloud storage
-            const uploadResult = await uploadToCloudinary(req.file.buffer, req.file.originalname);
-            imageUrl = uploadResult.secure_url; // Use secure_url instead of url
+            if (isCloudinaryConfigured()) {
+                // Upload to cloud storage
+                const uploadResult = await uploadToCloudinary(req.file.buffer, req.file.originalname);
+                imageUrl = uploadResult.secure_url; // Use secure_url instead of url
+            } else {
+                imageData = req.file.buffer;
+                imageMime = req.file.mimetype;
+            }
         }
 
         const pool = getPool();
 
         const result = await pool.query(
-            'INSERT INTO products (name, description, price, stock, image_url, status) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *',
-            [name, description, parseFloat(price), parseInt(stock), imageUrl, status || 'ACTIVE']
+            'INSERT INTO products (name, description, price, stock, image_url, image_data, image_mime, status) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *',
+            [
+                name,
+                description,
+                parseFloat(price),
+                parseInt(stock),
+                imageUrl,
+                imageData,
+                imageMime,
+                status || 'ACTIVE'
+            ]
         );
 
-        res.status(201).json(result.rows[0]);
+        const createdProduct = result.rows[0];
+        createdProduct.image_url = buildImageUrl(createdProduct);
+        res.status(201).json(createdProduct);
     } catch (err) {
         console.error('Error creating product:', err);
         res.status(500).json({
@@ -285,17 +336,35 @@ app.put('/api/products/:id', upload.single('image'), async (req, res) => {
         await client.query('BEGIN');
 
         const { id } = req.params;
+        const productId = parseInt(id);
+        
+        if (isNaN(productId)) {
+            await client.query('ROLLBACK');
+            return res.status(400).json({ error: 'Invalid product ID' });
+        }
+
         const { name, description, price, stock, status } = req.body;
 
-        if (!name || !price || stock === undefined) {
+        // Validate required fields
+        if (!name || name.trim() === '') {
             await client.query('ROLLBACK');
-            return res.status(400).json({ error: 'Missing required fields: name, price, stock' });
+            return res.status(400).json({ error: 'Product name is required' });
+        }
+
+        if (!price || isNaN(parseFloat(price))) {
+            await client.query('ROLLBACK');
+            return res.status(400).json({ error: 'Valid price is required' });
+        }
+
+        if (stock === undefined || stock === null || isNaN(parseInt(stock))) {
+            await client.query('ROLLBACK');
+            return res.status(400).json({ error: 'Valid stock quantity is required' });
         }
 
         // Get existing product
         const existingProduct = await client.query(
-            'SELECT image_url FROM products WHERE product_id = $1',
-            [id]
+            'SELECT image_url, image_data, image_mime FROM products WHERE product_id = $1',
+            [productId]
         );
 
         if (existingProduct.rows.length === 0) {
@@ -304,28 +373,64 @@ app.put('/api/products/:id', upload.single('image'), async (req, res) => {
         }
 
         let imageUrl = existingProduct.rows[0].image_url;
+        let imageData = existingProduct.rows[0].image_data;
+        let imageMime = existingProduct.rows[0].image_mime;
 
         if (req.file) {
             // Delete old image if it exists
-            if (imageUrl) {
-                await deleteFromCloudinary(imageUrl);
+            if (imageUrl && isCloudinaryConfigured()) {
+                try {
+                    await deleteFromCloudinary(imageUrl);
+                } catch (deleteErr) {
+                    console.warn('Error deleting old image:', deleteErr);
+                    // Continue even if deletion fails
+                }
             }
 
-            // Upload new image to cloud storage
-            const uploadResult = await uploadToCloudinary(req.file.buffer, req.file.originalname);
-            imageUrl = uploadResult.secure_url;
+            if (isCloudinaryConfigured()) {
+                // Upload new image to cloud storage
+                const uploadResult = await uploadToCloudinary(req.file.buffer, req.file.originalname);
+                imageUrl = uploadResult.secure_url;
+                imageData = null;
+                imageMime = null;
+            } else {
+                imageUrl = '';
+                imageData = req.file.buffer;
+                imageMime = req.file.mimetype;
+            }
         }
 
+        // Handle description - allow empty string or null
+        const productDescription = description !== undefined ? (description || '') : existingProduct.rows[0].description || '';
+
         const result = await client.query(
-            'UPDATE products SET name = $1, description = $2, price = $3, stock = $4, image_url = $5, status = $6 WHERE product_id = $7 RETURNING *',
-            [name, description, parseFloat(price), parseInt(stock), imageUrl, status || 'ACTIVE', id]
+            'UPDATE products SET name = $1, description = $2, price = $3, stock = $4, image_url = $5, image_data = $6, image_mime = $7, status = $8 WHERE product_id = $9 RETURNING *',
+            [
+                name.trim(),
+                productDescription,
+                parseFloat(price),
+                parseInt(stock),
+                imageUrl || null,
+                imageData,
+                imageMime || null,
+                status || 'ACTIVE',
+                productId
+            ]
         );
 
         await client.query('COMMIT');
-        res.json(result.rows[0]);
+        const updatedProduct = result.rows[0];
+        updatedProduct.image_url = buildImageUrl(updatedProduct);
+        res.json(updatedProduct);
     } catch (err) {
         await client.query('ROLLBACK');
         console.error('Error updating product:', err);
+        console.error('Error details:', {
+            message: err.message,
+            stack: err.stack,
+            body: req.body,
+            params: req.params
+        });
         res.status(500).json({
             error: 'Internal server error',
             details: process.env.NODE_ENV === 'development' ? err.message : undefined
@@ -535,7 +640,7 @@ module.exports = app;
 
 // Local development only
 if (process.env.NODE_ENV !== 'production' && require.main === module) {
-    const PORT = process.env.PORT || 3000;
+    const PORT = process.env.PORT || 8000;
     app.listen(PORT, () => {
         console.log(`Server running locally on http://localhost:${PORT}`);
     });
